@@ -30,9 +30,18 @@ export const api = {
   async login(payload) {
     return request("/auth/login", { method: "POST", body: JSON.stringify(payload) });
   },
+  async verifyEmail(payload) { return request("/auth/verify-email", { method: "POST", body: JSON.stringify(payload) }); },
+  async resendOtp(payload) { return request("/auth/resend-otp", { method: "POST", body: JSON.stringify(payload) }); },
+  async superAdminSignup(payload) { return request("/auth/super-admin/signup", { method: "POST", body: JSON.stringify(payload) }); },
+  async getSuperAdminDashboard() { return request("/super-admin/dashboard"); },
+  async getSuperAdminHr() { return request("/super-admin/hr"); },
+  async getSuperAdminEmployees(q = "") { return request(`/super-admin/employees${q ? `?q=${encodeURIComponent(q)}` : ""}`); },
+  async approveHr(id) { return request(`/super-admin/hr/${id}/approve`, { method: "PATCH" }); },
+  async rejectHr(id) { return request(`/super-admin/hr/${id}/reject`, { method: "PATCH" }); },
   async getProfile() {
     return request("/user/me");
   },
+  async updateProfile(payload) { return request("/user/me", { method: "PATCH", body: JSON.stringify(payload) }); },
   async getCheckins() {
     return request("/checkins");
   },
@@ -70,5 +79,8 @@ export const api = {
   async registerForWellnessEvent(id) { return request(`/wellness/events/${id}/register`, { method: "POST" }); },
   async cancelWellnessRegistration(id) { return request(`/wellness/events/${id}/register`, { method: "DELETE" }); },
   async submitFeedback(payload) { return request("/feedback", { method: "POST", body: JSON.stringify(payload) }); },
-  async getFeedbackAnalysis() { return request("/feedback/analysis"); }
+  async getFeedbackAnalysis() { return request("/feedback/analysis"); },
+  async getReminderStatus() { return request("/reminders"); },
+  async updateReminderPreferences(payload) { return request("/reminders/preferences", { method: "PATCH", body: JSON.stringify(payload) }); },
+  async actOnReminder(action) { return request("/reminders/action", { method: "POST", body: JSON.stringify({ action }) }); }
 };

@@ -11,6 +11,8 @@ import hrRoutes from "./routes/hr.js";
 import supportRoutes from "./routes/support.js";
 import wellnessRoutes from "./routes/wellness.js";
 import feedbackRoutes from "./routes/feedback.js";
+import reminderRoutes from "./routes/reminders.js";
+import superAdminRoutes from "./routes/superAdmin.js";
 
 const app = express();
 
@@ -42,6 +44,7 @@ app.get("/api/health", (_req, res) => {
 });
 
 app.use("/api/auth", authRoutes);
+app.use("/api/super-admin", superAdminRoutes);
 app.use("/api/checkins", checkinRoutes);
 app.use("/api/concerns", concernRoutes);
 app.use("/api/user", userRoutes);
@@ -51,6 +54,7 @@ app.use("/api/hr", hrRoutes);
 app.use("/api/support", supportRoutes);
 app.use("/api/wellness", wellnessRoutes);
 app.use("/api/feedback", feedbackRoutes);
+app.use("/api/reminders", reminderRoutes);
 
 app.use((err, _req, res, _next) => {
   console.error(err);

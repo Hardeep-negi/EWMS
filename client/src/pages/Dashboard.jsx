@@ -3,10 +3,17 @@ import { AlarmClock, CalendarCheck, ClipboardCheck, HandHeart, MoonStar, Sparkle
 import MetricCard from "../components/MetricCard";
 import TrendChart from "../components/TrendChart";
 import { api } from "../services/api";
+import WellnessReminder from "../components/WellnessReminder";
+import CheckinHeatmap from "../components/CheckinHeatmap";
 
 function formatDuration(minutes) {
   const safe = Math.max(0, Number(minutes || 0));
   return `${Math.floor(safe / 60)}h ${safe % 60}m`;
+}
+
+function formatSubmittedAt(checkin) {
+  const value = checkin?.checkInAt || checkin?.createdAt;
+  return value ? new Date(value).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "Not recorded";
 }
 
 function latestByType(checkins, type) {
@@ -18,7 +25,7 @@ export default function Dashboard({ refreshKey, onCheckIn }) {
   const [status, setStatus] = useState(null);
   const [supportActions, setSupportActions] = useState([]);
   const [wellnessEvents, setWellnessEvents] = useState([]);
-  const [reminderOpen, setReminderOpen] = useState(false);
+  const [reminderType, setReminderType] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -30,8 +37,11 @@ export default function Dashboard({ refreshKey, onCheckIn }) {
         setStatus(statusData.status);
         setSupportActions(supportData.actions || []);
         setWellnessEvents((eventData.events || []).filter((event) => event.status === "scheduled" && new Date(event.startsAt) >= new Date()).slice(0, 3));
-        const dismissed = localStorage.getItem(`morning-reminder-${statusData.status.shiftDate}`);
-        setReminderOpen(statusData.status.inShift && !statusData.status.morningComplete && !dismissed);
+        const morningDismissed = localStorage.getItem(`morning-reminder-${statusData.status.shiftDate}`);
+        const eveningDismissed = localStorage.getItem(`evening-reminder-${statusData.status.shiftDate}`);
+        if (statusData.status.inShift && !statusData.status.morningComplete && !morningDismissed) setReminderType("morning");
+        else if (statusData.status.eveningDue && !statusData.status.eveningComplete && !eveningDismissed) setReminderType("evening");
+        else setReminderType("");
       } catch {
         if (active) { setCheckins([]); setStatus(null); setSupportActions([]); setWellnessEvents([]); }
       }
@@ -41,22 +51,16 @@ export default function Dashboard({ refreshKey, onCheckIn }) {
     return () => { active = false; window.clearInterval(interval); };
   }, [refreshKey]);
 
-  useEffect(() => {
-    if (!status?.running) return undefined;
-    const timer = window.setInterval(() => setStatus((current) => current ? { ...current, elapsedMinutes: current.elapsedMinutes + 1, remainingMinutes: Math.max(0, current.remainingMinutes - 1) } : current), 60000);
-    return () => window.clearInterval(timer);
-  }, [status?.running]);
-
   const latest = checkins[0];
-  const morning = latestByType(checkins, "morning");
-  const evening = latestByType(checkins, "evening");
+  const morning = status?.morning || null;
+  const evening = status?.evening || null;
   const average = useMemo(() => checkins.length ? Math.round(checkins.reduce((sum, item) => sum + Number(item.wellbeingScore || 0), 0) / checkins.length) : 0, [checkins]);
   const overtime = status?.evening?.plannedOvertimeHours || 0;
   const compensation = status?.evening?.expectedCompensation || 0;
 
   function dismissReminder() {
-    if (status?.shiftDate) localStorage.setItem(`morning-reminder-${status.shiftDate}`, "true");
-    setReminderOpen(false);
+    if (status?.shiftDate && reminderType) localStorage.setItem(`${reminderType}-reminder-${status.shiftDate}`, "true");
+    setReminderType("");
   }
 
   async function dismissSupportUpdate(actionId) {
@@ -69,9 +73,10 @@ export default function Dashboard({ refreshKey, onCheckIn }) {
   }
 
   return <section className="page-stack">
-    {reminderOpen && <div className="checkin-reminder" role="dialog" aria-label="Morning check-in reminder">
-      <div><SunMedium size={20} /><div><strong>Start your shift with a quick check-in</strong><span>Your work timer starts from the saved check-in time.</span></div></div>
-      <div className="reminder-actions"><button className="secondary-button" onClick={dismissReminder}>Later</button><button className="primary-button" onClick={() => { dismissReminder(); onCheckIn("morning"); }}>Open morning check-in</button><button className="plain-icon-button" aria-label="Dismiss reminder" onClick={dismissReminder}><X size={18} /></button></div>
+    <WellnessReminder />
+    {reminderType && <div className="checkin-reminder" role="dialog" aria-label={`${reminderType} check-in reminder`}>
+      <div>{reminderType === "morning" ? <SunMedium size={20} /> : <MoonStar size={20} />}<div><strong>{reminderType === "morning" ? "Start your shift with a quick check-in" : "Your evening check-in is due"}</strong><span>{reminderType === "morning" ? "Your time since check-in is calculated from the saved server timestamp." : "Record how your day finished when practical."}</span></div></div>
+      <div className="reminder-actions"><button className="secondary-button" onClick={dismissReminder}>Later</button><button className="primary-button" onClick={() => { const current = reminderType; dismissReminder(); onCheckIn(current); }}>Open {reminderType} check-in</button><button className="plain-icon-button" aria-label="Dismiss reminder" onClick={dismissReminder}><X size={18} /></button></div>
     </div>}
 
     <div className="hero-band dashboard-intro">
@@ -82,14 +87,16 @@ export default function Dashboard({ refreshKey, onCheckIn }) {
       </div>
     </div>
 
-    <section className="shift-clock"><div className="clock-icon"><AlarmClock size={26} /></div><div><p className="eyebrow">Today's working time</p><strong>{status?.morningComplete ? formatDuration(status.elapsedMinutes) : "Not started"}</strong><span>{status?.morningComplete ? `${status.running ? "Running" : "Stopped"} · Shift ends ${status.endLabel}` : `Check in to start your ${status?.startLabel || "9:00 AM"} shift`}</span></div><div className="clock-detail"><span>Remaining</span><strong>{status?.morningComplete ? formatDuration(status.remainingMinutes) : "--"}</strong></div></section>
+    <section className="shift-clock"><div className="clock-icon"><AlarmClock size={26} /></div><div><p className="eyebrow">Time since morning check-in</p><strong>{status?.morningComplete ? formatDuration(status.elapsedMinutes) : "Not started"}</strong><span>{status?.morningComplete ? `${status.running ? "Within scheduled shift" : "Scheduled shift ended"} · ${status.startLabel} - ${status.endLabel}` : `Scheduled shift: ${status?.startLabel || "9:00 AM"} - ${status?.endLabel || "5:00 PM"}`}</span></div><div className="clock-detail"><span>Remaining scheduled time</span><strong>{status?.morningComplete ? formatDuration(status.remainingMinutes) : "--"}</strong></div></section>
 
     <div className="metrics-grid">
       <MetricCard label="Latest score" value={latest?.wellbeingScore ?? "--"} detail={latest ? `${latest.riskLevel.replace("-", " ")} status` : "No check-in yet"} tone={latest?.riskLevel || "neutral"} />
       <MetricCard label="Average score" value={average || "--"} detail={`${checkins.length} saved check-ins`} />
-      <MetricCard label="Shift status" value={status?.morningComplete ? "Started" : "Pending"} detail={status?.morningComplete ? `Ends ${status.endLabel}` : "Morning check-in required"} />
+      <MetricCard label="Shift status" value={status?.inShift ? "In shift" : "Outside shift"} detail={`${status?.startLabel || "9:00 AM"} - ${status?.endLabel || "5:00 PM"}`} />
       <MetricCard label="Planned overtime" value={overtime ? `${overtime}h` : "None"} detail={overtime ? `Expected INR ${compensation}` : "Set in evening check-in"} />
     </div>
+
+    <CheckinHeatmap checkins={checkins} />
 
     {supportActions.length > 0 && <section className="content-band support-updates">
       <div className="section-heading"><div><p className="eyebrow">HR follow-up</p><h3>Support updates</h3></div><span className="status-pill"><HandHeart size={15} /> {supportActions.length} update{supportActions.length === 1 ? "" : "s"}</span></div>
@@ -99,8 +106,8 @@ export default function Dashboard({ refreshKey, onCheckIn }) {
     {wellnessEvents.length > 0 && <section className="content-band upcoming-events"><div className="section-heading"><div><p className="eyebrow">Wellness calendar</p><h3>Upcoming events</h3></div></div><div className="event-widget-list">{wellnessEvents.map((event) => <article key={event.id}><CalendarCheck size={19} /><div><strong>{event.title}</strong><small>{new Date(event.startsAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}{event.registrationStatus === "registered" ? " · Registered" : ""}</small></div></article>)}</div></section>}
 
     <section className="comparison-grid">
-      <div className="content-band"><div className="section-heading"><div><p className="eyebrow">Today</p><h3>Morning vs evening</h3></div><span className="status-pill"><ClipboardCheck size={15} /> {status?.morningComplete && status?.eveningComplete ? "Complete" : "In progress"}</span></div><div className="comparison-table"><header><span>Indicator</span><span>Morning</span><span>Evening</span></header>{["mood", "stress", "workload"].map((key) => <div key={key}><span>{key}</span><b>{morning ? `${morning[key]}/5` : "--"}</b><b>{evening ? `${evening[key]}/5` : "--"}</b></div>)}</div></div>
-      <div className="content-band"><h3>Check-in status</h3><div className="status-list"><p><SunMedium size={17} /> Morning: <strong>{status?.morningComplete ? "Completed" : "Not completed"}</strong></p><p><MoonStar size={17} /> Evening: <strong>{status?.eveningComplete ? "Completed" : "Not completed"}</strong></p><p><CalendarCheck size={17} /> Shift: <strong>{status?.workingDay ? `${status.startLabel} - ${status.endLabel}` : "Non-working day"}</strong></p></div></div>
+      <div className="content-band"><div className="section-heading"><div><p className="eyebrow">Current shift</p><h3>Morning vs evening</h3></div><span className="status-pill"><ClipboardCheck size={15} /> {status?.shiftDate || "Today"}</span></div><div className="comparison-table"><header><span>Indicator</span><span>Morning</span><span>Evening</span></header>{["mood", "stress", "workload"].map((key) => <div key={key}><span>{key}</span><b>{morning ? `${morning[key]}/5` : "Pending"}</b><b>{evening ? `${evening[key]}/5` : "Pending"}</b></div>)}<div><span>Submitted</span><b>{formatSubmittedAt(morning)}</b><b>{formatSubmittedAt(evening)}</b></div><div><span>Planned overtime</span><b>Not recorded</b><b>{evening?.plannedOvertimeHours ? `${evening.plannedOvertimeHours}h · INR ${evening.expectedCompensation || 0}` : "None"}</b></div></div></div>
+      <div className="content-band"><h3>Check-in status</h3><div className="status-list"><p><SunMedium size={17} /> Morning: <strong>{status?.morningStatus || "Pending"}</strong></p><p><MoonStar size={17} /> Evening: <strong>{status?.eveningStatus || "Not due"}</strong></p><p><CalendarCheck size={17} /> Current shift: <strong>{status?.inShift ? "In progress" : "Outside scheduled hours"}</strong></p></div></div>
     </section>
 
     <section className="content-band"><div className="section-heading"><div><p className="eyebrow">Trend</p><h3>Wellbeing score history</h3></div><span className="status-pill"><Sparkles size={15} /> Rule-based score</span></div><TrendChart checkins={checkins} /></section>

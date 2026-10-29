@@ -16,6 +16,7 @@ const checkInSchema = new mongoose.Schema(
     leaveDays: { type: Number, min: 0, default: 0 },
     comment: { type: String, default: "", trim: true },
     wellbeingScore: { type: Number, min: 0, max: 100, required: true },
+    scoreVersion: { type: String, default: "v1" },
     riskLevel: { type: String, enum: ["healthy", "watch", "at-risk"], required: true },
     date: { type: Date, default: Date.now }
   },

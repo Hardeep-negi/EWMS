@@ -1,34 +1,22 @@
-import React from "react";
-import { BellRing, MailCheck } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { BellRing, MailCheck, Pencil, Save, X } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { api } from "../services/api";
+
+function profileForm(user) { return { name: user.name || "", phone: user.phone || "", email: user.email || "", jobTitle: user.jobTitle || "" }; }
 
 export default function Profile() {
-  const { user } = useAuth();
-  return (
-    <section className="page-stack">
-      <section className="profile-header">
-        <div className="avatar-large">{user.name?.slice(0, 1) || "E"}</div>
-        <div>
-          <p className="eyebrow">Employee profile</p>
-          <h2>{user.name}</h2>
-          <p>{user.jobTitle || "Employee"} · {user.department || "General"}</p>
-        </div>
-      </section>
-      <section className="split-grid">
-        <div className="content-band">
-          <h3>Account details</h3>
-          <dl className="detail-list">
-            <div><dt>Email</dt><dd>{user.email}</dd></div>
-            <div><dt>Role</dt><dd>{user.role || "employee"}</dd></div>
-            <div><dt>Department</dt><dd>{user.department || "General"}</dd></div>
-          </dl>
-        </div>
-        <div className="content-band">
-          <h3>Preferences</h3>
-          <label className="checkbox-row"><input type="checkbox" defaultChecked /> <BellRing size={17} /> Weekly check-in reminder</label>
-          <label className="checkbox-row"><input type="checkbox" defaultChecked /> <MailCheck size={17} /> Personal trend summary email</label>
-        </div>
-      </section>
-    </section>
-  );
+  const { user, updateCurrentUser } = useAuth();
+  const [preferences, setPreferences] = useState(user.reminderPreferences || { enabled: true, intervalMinutes: 75, breakEnabled: true, waterEnabled: true, stretchEnabled: true });
+  const [form, setForm] = useState(() => profileForm(user));
+  const [editing, setEditing] = useState(false);
+  const [saved, setSaved] = useState("");
+  const [error, setError] = useState("");
+  useEffect(() => { setForm(profileForm(user)); }, [user]);
+  useEffect(() => { if (user.role === "employee") api.getReminderStatus().then((data) => setPreferences(data.preferences)).catch(() => {}); }, [user.role]);
+  function update(key, value) { setForm((current) => ({ ...current, [key]: value })); }
+  async function updateReminder(key, value) { const next = { ...preferences, [key]: value }; setPreferences(next); try { await api.updateReminderPreferences(next); setSaved("Reminder preferences saved."); } catch { setSaved("Unable to save reminder preferences."); } }
+  async function saveProfile(event) { event.preventDefault(); setError(""); setSaved(""); try { const result = await api.updateProfile(form); updateCurrentUser(result.user); setEditing(false); setSaved("Profile details updated."); } catch (err) { setError(err.message || "Unable to update profile details."); } }
+  function cancelEdit() { setForm(profileForm(user)); setError(""); setEditing(false); }
+  return <section className="page-stack"><section className="profile-header"><div className="avatar-large">{user.name?.slice(0, 1) || "E"}</div><div><p className="eyebrow">{user.role === "hr" ? "HR profile" : "Employee profile"}</p><h2>{user.name}</h2><p>{user.role === "employee" ? `${user.jobTitle || "Employee"} · ` : ""}{user.department || "General"}</p></div><button className="secondary-button profile-edit-button" onClick={() => setEditing((current) => !current)}>{editing ? <><X size={17} /> Cancel</> : <><Pencil size={17} /> Edit details</>}</button></section><section className="split-grid"><div className="content-band"><div className="section-heading"><h3>Account details</h3>{!editing && <MailCheck size={20} />}</div>{editing ? <form onSubmit={saveProfile} className="profile-edit-form"><label>Full name<input required value={form.name} onChange={(event) => update("name", event.target.value)} /></label><label>Phone number<input required type="tel" value={form.phone} onChange={(event) => update("phone", event.target.value)} /></label><label>Email<input required type="email" value={form.email} onChange={(event) => update("email", event.target.value)} /></label>{user.role === "employee" && <label>Job title<input required value={form.jobTitle} onChange={(event) => update("jobTitle", event.target.value)} /></label>}{error && <p className="form-error">{error}</p>}<div className="form-actions"><button className="primary-button"><Save size={17} /> Save details</button><button type="button" className="secondary-button" onClick={cancelEdit}>Cancel</button></div></form> : <dl className="detail-list"><div><dt>Name</dt><dd>{user.name}</dd></div><div><dt>Email</dt><dd>{user.email}</dd></div><div><dt>Phone</dt><dd>{user.phone || "Not provided"}</dd></div>{user.role === "employee" && <div><dt>Job title</dt><dd>{user.jobTitle || "Employee"}</dd></div>}<div><dt>Role</dt><dd>{user.role || "employee"}</dd></div><div><dt>Department</dt><dd>{user.department || "General"}</dd></div></dl>}{saved && <p className={saved.startsWith("Unable") ? "form-error" : "success-message"}>{saved}</p>}</div><div className="content-band"><h3>Preferences</h3>{user.role === "employee" ? <><label className="checkbox-row"><input type="checkbox" checked={preferences.enabled} onChange={(event) => updateReminder("enabled", event.target.checked)} /> <BellRing size={17} /> In-app wellness reminders</label><label>Reminder interval<select value={preferences.intervalMinutes} onChange={(event) => updateReminder("intervalMinutes", Number(event.target.value))}><option value="60">Every 60 minutes</option><option value="75">Every 75 minutes</option><option value="90">Every 90 minutes</option></select></label><label className="checkbox-row"><input type="checkbox" checked={preferences.breakEnabled} onChange={(event) => updateReminder("breakEnabled", event.target.checked)} /> Break reminders</label><label className="checkbox-row"><input type="checkbox" checked={preferences.waterEnabled} onChange={(event) => updateReminder("waterEnabled", event.target.checked)} /> Hydration reminders</label><label className="checkbox-row"><input type="checkbox" checked={preferences.stretchEnabled} onChange={(event) => updateReminder("stretchEnabled", event.target.checked)} /> Stretch reminders</label>{saved.startsWith("Reminder") && <p className="success-message">{saved}</p>}</> : <p className="soft-copy">Personal reminder preferences are available in the employee portal.</p>}</div></section></section>;
 }

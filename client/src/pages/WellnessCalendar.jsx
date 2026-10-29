@@ -9,7 +9,7 @@ function eventDate(value) { return new Date(value).toLocaleString([], { dateStyl
 
 export default function WellnessCalendar() {
   const { user } = useAuth();
-  const isHR = user.role === "hr" || user.role === "admin";
+  const isHR = user.role === "hr";
   const [events, setEvents] = useState([]); const [form, setForm] = useState(blankEvent); const [editingId, setEditingId] = useState(null); const [error, setError] = useState(""); const [message, setMessage] = useState("");
   function load() { api.getWellnessEvents().then((data) => setEvents(data.events || [])).catch((err) => setError(err.message)); }
   useEffect(load, []);

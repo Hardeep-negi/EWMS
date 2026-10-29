@@ -44,9 +44,12 @@ export function getShiftWindow(shift, now = new Date()) {
 
 export function clockStatus(morning, evening, shift, now = new Date()) {
   const window = getShiftWindow(shift, now);
-  const effectiveEnd = new Date(Math.min(window.end.getTime(), evening?.createdAt ? new Date(evening.createdAt).getTime() : Infinity));
   const startedAt = morning?.checkInAt ? new Date(morning.checkInAt) : null;
-  const elapsedMinutes = startedAt ? Math.max(0, Math.floor((Math.min(now.getTime(), effectiveEnd.getTime()) - startedAt.getTime()) / 60000)) : 0;
+  const elapsedMinutes = startedAt ? Math.max(0, Math.floor((Math.min(now.getTime(), window.end.getTime()) - startedAt.getTime()) / 60000)) : 0;
+  const eveningDueAt = new Date(window.end.getTime() - 60 * 60 * 1000);
+  const eveningDue = window.workingDay && now >= eveningDueAt;
+  const morningLate = window.workingDay && now >= window.start && !morning;
+  const eveningLate = window.workingDay && now >= window.end && !evening;
   return {
     ...window,
     morningComplete: Boolean(morning),
@@ -54,7 +57,12 @@ export function clockStatus(morning, evening, shift, now = new Date()) {
     inShift: window.workingDay && now >= window.start && now < window.end,
     elapsedMinutes,
     remainingMinutes: Math.max(0, Math.ceil((window.end.getTime() - now.getTime()) / 60000)),
-    running: Boolean(startedAt && now < effectiveEnd),
+    running: Boolean(startedAt && now < window.end),
+    serverNow: now,
+    eveningDueAt,
+    eveningDue,
+    morningStatus: morning ? "completed" : morningLate ? "late" : "pending",
+    eveningStatus: evening ? "completed" : eveningLate ? "late" : eveningDue ? "pending" : "not-due",
     morning,
     evening
   };

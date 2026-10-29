@@ -7,7 +7,7 @@ import SupportAction from "../models/SupportAction.js";
 import Concern from "../models/Concern.js";
 
 const router = express.Router();
-router.use(requireAuth, requireRole("hr", "admin"));
+router.use(requireAuth, requireRole("hr"));
 
 function today() { return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date()); }
 function average(items, field) { return items.length ? Number((items.reduce((sum, item) => sum + Number(item[field] || 0), 0) / items.length).toFixed(1)) : null; }
@@ -18,7 +18,17 @@ async function departmentEmployees(department) {
 
 function safeCheckin(checkin) {
   if (!checkin) return null;
-  return { id: checkin._id, type: checkin.type, shiftDate: checkin.shiftDate, createdAt: checkin.createdAt, mood: checkin.mood, stress: checkin.stress, workload: checkin.workload, wellbeingScore: checkin.wellbeingScore, riskLevel: checkin.riskLevel, plannedOvertimeHours: checkin.plannedOvertimeHours || 0 };
+  return { id: checkin._id, type: checkin.type, shiftDate: checkin.shiftDate, createdAt: checkin.createdAt, checkInAt: checkin.checkInAt || checkin.createdAt, mood: checkin.mood, stress: checkin.stress, workload: checkin.workload, wellbeingScore: checkin.wellbeingScore, scoreVersion: checkin.scoreVersion || "v1", riskLevel: checkin.riskLevel, plannedOvertimeHours: checkin.plannedOvertimeHours || 0 };
+}
+
+function trendBucket(checkin, range) {
+  const date = checkin.shiftDate;
+  if (range === "daily") return date;
+  if (range === "monthly") return `${date.slice(0, 7)}-01`;
+  const value = new Date(`${date}T00:00:00Z`);
+  const day = value.getUTCDay() || 7;
+  value.setUTCDate(value.getUTCDate() - day + 1);
+  return value.toISOString().slice(0, 10);
 }
 
 function supportStatusFor(employeeId, latestCheckin, actionsByEmployee, openConcernByEmployee) {
@@ -99,14 +109,35 @@ router.get("/employees/:employeeId", async (req, res, next) => {
 router.get("/trends", async (req, res, next) => {
   try {
     const days = { daily: 7, weekly: 30, monthly: 90 }[req.query.range] || 7;
+    const range = ["daily", "weekly", "monthly"].includes(req.query.range) ? req.query.range : "daily";
     const since = new Date(Date.now() - days * 86400000);
     const employees = await departmentEmployees(req.user.department); const ids = employees.map((employee) => employee._id);
-    if (employees.length < 3) return res.json({ suppressed: true, minimumGroupSize: 3, contributorCount: employees.length, points: [] });
     const checkins = await CheckIn.find({ user: { $in: ids }, createdAt: { $gte: since } }).sort({ shiftDate: 1 }).lean();
+    const contributors = new Set(checkins.map((item) => String(item.user)));
+    if (contributors.size < 3) return res.json({ suppressed: true, minimumGroupSize: 3, contributorCount: contributors.size, points: [] });
     const groups = new Map();
-    for (const checkin of checkins) { const key = checkin.shiftDate; if (!groups.has(key)) groups.set(key, []); groups.get(key).push(checkin); }
-    const points = [...groups.entries()].map(([date, items]) => ({ date, score: average(items, "wellbeingScore"), mood: average(items, "mood"), stress: average(items, "stress"), workload: average(items, "workload"), completion: Number((items.length / Math.max(1, employees.length * 2) * 100).toFixed(0)), overtime: Number(items.reduce((sum, item) => sum + Number(item.plannedOvertimeHours || 0), 0).toFixed(1)) }));
-    res.json({ suppressed: false, contributorCount: employees.length, points, summary: { score: average(checkins, "wellbeingScore"), mood: average(checkins, "mood"), stress: average(checkins, "stress"), workload: average(checkins, "workload"), overtime: Number(checkins.reduce((sum, item) => sum + Number(item.plannedOvertimeHours || 0), 0).toFixed(1)) } });
+    for (const checkin of checkins) { const key = trendBucket(checkin, range); if (!groups.has(key)) groups.set(key, []); groups.get(key).push(checkin); }
+    const points = [...groups.entries()].map(([date, items]) => {
+      const mornings = items.filter((item) => item.type === "morning");
+      const evenings = items.filter((item) => item.type === "evening");
+      return {
+        date,
+        score: average(items, "wellbeingScore"),
+        mood: average(items, "mood"),
+        stress: average(items, "stress"),
+        workload: average(items, "workload"),
+        morningScore: average(mornings, "wellbeingScore"),
+        eveningScore: average(evenings, "wellbeingScore"),
+        morningMood: average(mornings, "mood"), eveningMood: average(evenings, "mood"),
+        morningStress: average(mornings, "stress"), eveningStress: average(evenings, "stress"),
+        morningWorkload: average(mornings, "workload"), eveningWorkload: average(evenings, "workload"),
+        completion: Number((items.length / Math.max(1, contributors.size * 2) * 100).toFixed(0)),
+        overtime: Number(items.reduce((sum, item) => sum + Number(item.plannedOvertimeHours || 0), 0).toFixed(1)),
+        responses: items.length,
+        employees: new Set(items.map((item) => String(item.user))).size
+      };
+    });
+    res.json({ suppressed: false, contributorCount: contributors.size, points, summary: { score: average(checkins, "wellbeingScore"), mood: average(checkins, "mood"), stress: average(checkins, "stress"), workload: average(checkins, "workload"), overtime: Number(checkins.reduce((sum, item) => sum + Number(item.plannedOvertimeHours || 0), 0).toFixed(1)) } });
   } catch (error) { next(error); }
 });
 

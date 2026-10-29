@@ -11,6 +11,7 @@
     "dev": "node scripts/dev.js",
     "client": "pnpm --filter employee-wellbeing-client dev",
     "server": "pnpm --filter employee-wellbeing-server dev",
-    "build": "pnpm --filter employee-wellbeing-client build"
+    "build": "pnpm --filter employee-wellbeing-client build",
+    "test": "pnpm --filter employee-wellbeing-server test"
   }
 }

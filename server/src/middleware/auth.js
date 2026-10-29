@@ -10,6 +10,8 @@ export async function requireAuth(req, res, next) {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
     const user = await User.findById(payload.userId);
     if (!user) return res.status(401).json({ message: "User not found" });
+    if (user.accessStatus !== "approved") return res.status(403).json({ message: "This account is not approved for access" });
+    if ((user.role === "employee" || user.role === "super-admin") && !user.emailVerified) return res.status(403).json({ message: "Email verification is required" });
 
     req.user = user;
     next();

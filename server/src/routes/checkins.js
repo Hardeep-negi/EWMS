@@ -57,7 +57,9 @@ router.post("/", employeeOnly, async (req, res, next) => {
       user: req.user._id,
       type,
       shiftDate: shift.shiftDate,
-      checkInAt: type === "morning" ? new Date() : null,
+      // This is the server-recorded submission timestamp for either check-in.
+      // The shift clock deliberately reads it only from the morning record.
+      checkInAt: new Date(),
       mood: Number(mood), stress: Number(stress), workload: Number(workload),
       plannedOvertime: type === "evening" ? Boolean(plannedOvertime) : false,
       plannedOvertimeHours: type === "evening" && plannedOvertime ? overtimeHours : 0,

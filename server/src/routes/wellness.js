@@ -47,7 +47,7 @@ router.delete("/events/:eventId/register", requireRole("employee"), async (req, 
   } catch (error) { next(error); }
 });
 
-router.use(requireRole("hr", "admin"));
+router.use(requireRole("hr"));
 
 router.post("/events", async (req, res, next) => {
   try {

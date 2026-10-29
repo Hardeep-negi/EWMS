@@ -37,7 +37,7 @@ export function AuthProvider({ children }) {
 
       if (mode === "signup") {
         setAuthMessage("Sign up successful. Please login.");
-        return { ok: true, message: data.message || "Sign up successful. Please login." };
+        return { ok: true, message: data.message || "Sign up successful. Please login.", verificationRequired: data.verificationRequired, email: data.email };
       }
 
       setUser(data.user);
@@ -52,6 +52,17 @@ export function AuthProvider({ children }) {
     }
   }
 
+  async function verifyEmail(payload) {
+    setLoading(true);
+    try {
+      const data = await api.verifyEmail(payload);
+      setUser(data.user); setToken(data.token); localStorage.setItem("token", data.token);
+      setAuthMessage(data.message || "Email verified.");
+      return { ok: true };
+    } catch (error) { return { ok: false, message: error.message }; }
+    finally { setLoading(false); }
+  }
+
   function logout() {
     localStorage.removeItem("token");
     localStorage.removeItem("wellbeing-theme");
@@ -64,8 +75,12 @@ export function AuthProvider({ children }) {
     setAuthMessage("");
   }
 
+  function updateCurrentUser(nextUser) {
+    setUser(nextUser);
+  }
+
   const value = useMemo(
-    () => ({ user, token, loading, authMessage, authenticate, logout, clearAuthMessage }),
+    () => ({ user, token, loading, authMessage, authenticate, verifyEmail, logout, clearAuthMessage, updateCurrentUser }),
     [user, token, loading, authMessage]
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

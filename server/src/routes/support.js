@@ -31,7 +31,7 @@ router.patch("/mine/:actionId/dismiss", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-router.use(requireRole("hr", "admin"));
+router.use(requireRole("hr"));
 
 router.get("/", async (req, res, next) => {
   try {

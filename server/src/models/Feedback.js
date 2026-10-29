@@ -1,6 +1,8 @@
 import mongoose from "mongoose";
 
 const feedbackSchema = new mongoose.Schema({
+  user: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+  anonymous: { type: Boolean, default: true, index: true },
   department: { type: String, enum: ["Development", "Marketing", "Sales"], required: true, index: true },
   category: { type: String, enum: ["Workload", "Work environment", "Management", "Work-life balance", "Wellness programs", "Other"], required: true },
   message: { type: String, trim: true, maxlength: 1500, default: "" }
