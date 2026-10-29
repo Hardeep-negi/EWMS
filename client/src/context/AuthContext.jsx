@@ -37,7 +37,7 @@ export function AuthProvider({ children }) {
 
       if (mode === "signup") {
         setAuthMessage("Sign up successful. Please login.");
-        return { ok: true, message: data.message || "Sign up successful. Please login.", verificationRequired: data.verificationRequired, email: data.email };
+        return { ok: true, message: data.message || "Sign up successful. Please login.", verificationRequired: data.verificationRequired, email: data.email, otpExpiresAt: data.otpExpiresAt };
       }
 
       setUser(data.user);

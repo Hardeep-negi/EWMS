@@ -980,6 +980,8 @@ output {
 .admin-status.pending { color: #805e10; background: #fff3d6; }
 .admin-status.rejected { color: #a52e2e; background: #ffebeb; }
 .admin-status.unverified { color: #705d19; background: #fff8d9; }
+.otp-countdown { margin: 8px 0 0; color: var(--accent); font-weight: 800; }
+.otp-countdown.expired { color: #b03737; }
 @media (max-width: 980px) { .admin-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 680px) { .admin-metrics { grid-template-columns: 1fr; }.admin-search { width: 100%; }.super-admin-page .section-heading { gap: 14px; } }
 .directory-row:hover, .directory-row:focus-visible { background: var(--accent-soft); outline: none; }

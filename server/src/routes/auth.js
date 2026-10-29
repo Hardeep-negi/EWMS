@@ -30,7 +30,13 @@ async function issueOtp(user) {
   user.emailOtpAttempts = 0;
   user.emailOtpSentAt = new Date();
   await user.save();
-  await sendVerificationCode(user.email, code);
+  // Do not make account creation wait on an external SMTP connection. The
+  // verification screen can open immediately, while delivery is retried via
+  // the normal resend flow if Gmail is temporarily slow or unavailable.
+  void sendVerificationCode(user.email, code).catch((error) => {
+    console.error("OTP email delivery failed:", error.message);
+  });
+  return user.emailOtpExpiresAt;
 }
 async function removeUnverifiedRegistration(user) {
   if (!user) return;
@@ -50,7 +56,10 @@ router.post("/signup", async (req, res, next) => {
     const normalizedEmail = email.trim().toLowerCase();
     if (await User.exists({ email: normalizedEmail })) return res.status(409).json({ message: "Unable to create an account with these details. Try logging in or use a different email." });
     user = await User.create({ name, email: normalizedEmail, passwordHash: await bcrypt.hash(password, 10), department, jobTitle: role === "employee" ? jobTitle : "", phone, role, accessStatus: role === "hr" ? "pending" : "approved", emailVerified: role === "hr" });
-    if (role === "employee") { await issueOtp(user); return res.status(201).json({ verificationRequired: true, email: user.email, message: "Check your email for a six-digit verification code." }); }
+    if (role === "employee") {
+      const otpExpiresAt = await issueOtp(user);
+      return res.status(201).json({ verificationRequired: true, email: user.email, otpExpiresAt, message: "Check your email for a six-digit verification code." });
+    }
     res.status(201).json({ message: "HR registration submitted and awaiting Super Admin approval." });
   } catch (error) { await removeUnverifiedRegistration(user); next(error); }
 });
@@ -72,8 +81,8 @@ router.post("/super-admin/signup", async (req, res, next) => {
     if (await User.exists({ role: "super-admin", department, emailVerified: true })) return res.status(409).json({ message: "A Super Admin account already exists for this department. Please log in instead." });
     user = await User.create({ name, email: normalizedEmail, passwordHash: await bcrypt.hash(password, 10), phone: "", department, role: "super-admin", emailVerified: false, accessStatus: "pending" });
     await SuperAdminReservation.create({ department, user: user._id, expiresAt: new Date(Date.now() + 5 * 60_000) });
-    await issueOtp(user);
-    res.status(201).json({ verificationRequired: true, email: user.email, message: "Check your email for a six-digit verification code." });
+    const otpExpiresAt = await issueOtp(user);
+    res.status(201).json({ verificationRequired: true, email: user.email, otpExpiresAt, message: "Check your email for a six-digit verification code." });
   } catch (error) { await removeUnverifiedRegistration(user); if (error.code === 11000) return res.status(409).json({ message: "A Super Admin registration is already in progress or exists for this department." }); next(error); }
 });
 
@@ -81,10 +90,12 @@ router.post("/verify-email", async (req, res, next) => {
   try {
     const email = String(req.body.email || "").trim().toLowerCase(); const code = String(req.body.code || "");
     const user = await User.findOne({ email, role: { $in: ["employee", "super-admin"] }, emailVerified: false }).select("+emailOtpHash +emailOtpExpiresAt +emailOtpAttempts");
-    if (!user || !/^\d{6}$/.test(code)) return res.status(400).json({ message: "Invalid or expired verification code" });
-    if (user.emailOtpAttempts >= 5 || !user.emailOtpExpiresAt || user.emailOtpExpiresAt < new Date()) return res.status(400).json({ message: "Invalid or expired verification code" });
+    if (!user) return res.status(400).json({ message: "This verification code is invalid or has already been used." });
+    if (!/^\d{6}$/.test(code)) return res.status(400).json({ message: "Enter the six-digit verification code." });
+    if (user.emailOtpAttempts >= 5) return res.status(400).json({ message: "Too many incorrect codes. Request a new code." });
+    if (!user.emailOtpExpiresAt || user.emailOtpExpiresAt < new Date()) return res.status(400).json({ message: "This verification code has expired. Request a new code." });
     user.emailOtpAttempts += 1;
-    if (user.emailOtpHash !== otpHash(email, code)) { await user.save(); return res.status(400).json({ message: "Invalid or expired verification code" }); }
+    if (user.emailOtpHash !== otpHash(email, code)) { await user.save(); return res.status(400).json({ message: "The verification code is incorrect." }); }
     if (user.role === "super-admin") {
       const reservation = await SuperAdminReservation.exists({ user: user._id, department: user.department, expiresAt: { $gt: new Date() } });
       if (!reservation) return res.status(400).json({ message: "This Super Admin registration has expired. Please register again." });
@@ -106,7 +117,8 @@ router.post("/resend-otp", otpRateLimit, async (req, res, next) => {
     if (user) {
       if (user.role === "super-admin" && !(await SuperAdminReservation.exists({ user: user._id, expiresAt: { $gt: new Date() } }))) return res.json({ message: "If the account can receive a code, a new code has been sent." });
       if (user.emailOtpSentAt && Date.now() - user.emailOtpSentAt.getTime() < 60_000) return res.status(429).json({ message: "Please wait one minute before requesting another code." });
-      await issueOtp(user);
+      const otpExpiresAt = await issueOtp(user);
+      return res.json({ message: "A new code has been sent.", otpExpiresAt });
     }
     res.json({ message: "If the account can receive a code, a new code has been sent." });
   } catch (error) { next(error); }
